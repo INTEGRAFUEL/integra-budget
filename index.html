@@ -1,0 +1,57 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IN´TEGRA BUDGET</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,sans-serif;background:#f2f4f7;color:#1d2533}
+.w{max-width:480px;margin:0 auto;padding:12px}h1{font-size:17px;margin:4px 0 10px;color:#0b4f8a;letter-spacing:.5px}
+.c{background:#fff;border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px #0001}
+input{width:100%;padding:9px;border:1px solid #ccd;border-radius:7px;font-size:15px}button{padding:9px 12px;border:0;border-radius:7px;background:#0b4f8a;color:#fff;font-size:14px;cursor:pointer}
+.r{display:flex;gap:6px}.r input{flex:1}.k{color:#667;font-size:12px}.v{margin-bottom:6px}.b{display:inline-block;padding:2px 8px;border-radius:9px;font-size:12px;font-weight:600}
+.ok{background:#dcf5e3;color:#13652e}.no{background:#fde2e2;color:#8a1313}.ne{background:#eef;color:#335}small a{color:#0b4f8a}#m{color:#8a1313;min-height:16px;font-size:13px}
+</style></head><body><div class="w">
+<h1>IN´TEGRA BUDGET <small class="k">consulta rápida de CNPJ</small></h1>
+<div class="c"><form id="q" class="r"><input id="cnpj" inputmode="numeric" placeholder="00.000.000/0000-00" maxlength="18" autocomplete="off"><button>Consultar</button></form><div id="m"></div></div>
+<div id="out"></div>
+<div class="c" id="auth"></div>
+</div>
+<script type="module">
+import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const sb=createClient('https://vnvpsozrcjazbzqtqona.supabase.co','sb_publishable_LWOCYqR_CWl-4Xnhiw6-Gg_GMwehynj');
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mask=d=>d.replace(/^(\d{2})(\d)/,'$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/,'$1.$2.$3').replace(/\.(\d{3})(\d)/,'.$1/$2').replace(/(\d{4})(\d)/,'$1-$2');
+const dig=s=>s.replace(/\D/g,'');
+function valido(c){if(c.length!==14||/^(\d)\1+$/.test(c))return false;const f=n=>{let s=0,p=n-7;for(let i=0;i<n;i++){s+=+c[i]*p--;if(p<2)p=9}const r=s%11;return r<2?0:11-r};return f(12)==c[12]&&f(13)==c[13]}
+let membro=false,ultimo=null;
+$('#cnpj').oninput=e=>{e.target.value=mask(dig(e.target.value).slice(0,14))};
+const fone=t=>t?t.replace(/^(\d{2})(\d{4,5})(\d{4})$/,'($1) $2-$3'):'';
+const dt=s=>s?s.split('-').reverse().join('/'):'';
+async function authBox(){const {data:{session}}=await sb.auth.getSession();membro=false;
+ if(session){const {data}=await sb.rpc('sou_membro');membro=!!data}
+ $('#auth').innerHTML=session?`<span class="k">${esc(session.user.email)} ${membro?'· equipe':'· sem acesso ao cadastro'}</span> <button id="sair" style="float:right;padding:4px 9px">Sair</button>`
+ :`<form id="lg"><div class="k" style="margin-bottom:6px">Entrar (equipe) para ver se a empresa já está no cadastro</div><div class="r"><input name="e" type="email" placeholder="e-mail"><input name="s" type="password" placeholder="senha"><button>Entrar</button></div></form>`;
+ if(session)$('#sair').onclick=async()=>{await sb.auth.signOut();authBox();if(ultimo)mostra(ultimo)};
+ else $('#lg').onsubmit=async e=>{e.preventDefault();const {error}=await sb.auth.signInWithPassword({email:e.target.e.value.trim(),password:e.target.s.value});if(error){$('#m').textContent='Falha no login';return}$('#m').textContent='';await authBox();if(ultimo)mostra(ultimo)};}
+async function cadastro(c){if(!membro)return `<div class="k">Entre com seu login da equipe para ver se já está no cadastro.</div>`;
+ const {data,error}=await sb.from('clientes').select('id,status,nome_fantasia').eq('cnpj_cpf',c).maybeSingle();
+ if(error)return `<div class="k">Erro no cadastro: ${esc(error.message)}</div>`;
+ if(data)return `<span class="b ok">No cadastro: ${esc(data.status||'—')}</span> <small><a href="https://integrafuel.github.io/clientes-integra/#/cliente/${data.id}" target="_blank">abrir ficha</a></small>`;
+ return `<span class="b ne">Não cadastrado</span> <button id="add" style="padding:4px 9px;margin-left:6px">Cadastrar como prospect</button>`}
+async function mostra(d){ultimo=d;const ativa=(d.descricao_situacao_cadastral||'').toUpperCase()==='ATIVA';
+ const end=[d.descricao_tipo_de_logradouro,d.logradouro].filter(Boolean).join(' ')+(d.numero?', '+d.numero:'')+(d.complemento?' '+d.complemento:'')+(d.bairro?' – '+d.bairro:'')+` – ${d.municipio||''}/${d.uf||''}`+(d.cep?' – CEP '+d.cep:'');
+ const tel=[d.ddd_telefone_1,d.ddd_telefone_2].filter(Boolean).map(fone).join(' / ');
+ const qsa=(d.qsa||[]).map(s=>`${esc(s.nome_socio)} <span class="k">(${esc(s.qualificacao_socio)})</span>`).join('<br>')||'—';
+ const L=(k,v)=>`<div class="v"><div class="k">${k}</div>${v||'—'}</div>`;
+ $('#out').innerHTML=`<div class="c"><div style="margin-bottom:8px"><span class="b ${ativa?'ok':'no'}">${esc(d.descricao_situacao_cadastral||'?')}</span> <span class="k">${mask(d.cnpj)}</span></div>
+ ${L('Razão social','<b>'+esc(d.razao_social)+'</b>')}${L('Nome fantasia',esc(d.nome_fantasia))}${L('Abertura',dt(d.data_inicio_atividade))}
+ ${L('CNAE principal',esc((d.cnae_fiscal||'')+' – '+(d.cnae_fiscal_descricao||'')))}${L('Endereço',esc(end))}${L('Telefone',esc(tel))}${L('E-mail',esc((d.email||'').toLowerCase()))}
+ ${L('Sócios (QSA)',qsa)}<div id="cad" class="v"></div></div>`;
+ $('#cad').innerHTML=await cadastro(d.cnpj);const b=$('#add');if(b)b.onclick=()=>addProspect(d,end,tel)}
+async function addProspect(d,end,tel){if(!confirm('Cadastrar '+d.razao_social+' como prospect?'))return;
+ const o={razao_social:d.razao_social,nome_fantasia:d.nome_fantasia||null,cnpj_cpf:d.cnpj,endereco:[d.descricao_tipo_de_logradouro,d.logradouro].filter(Boolean).join(' ')||null,numero:d.numero||null,complemento:d.complemento||null,bairro:d.bairro||null,cidade:d.municipio||null,uf:d.uf||null,cep:d.cep||null,telefones:tel||null,email:(d.email||'').toLowerCase()||null,status:'prospect',origem:'IN´TEGRA BUDGET (consulta CNPJ)'};
+ const r=await sb.from('clientes').insert(o).select('id').single();if(r.error){$('#m').textContent='Erro: '+r.error.message;return}
+ await sb.from('historico').insert({cliente_id:r.data.id,descricao:'Cadastrado como prospect via IN´TEGRA BUDGET (dados BrasilAPI/Receita)'});mostra(d)}
+$('#q').onsubmit=async e=>{e.preventDefault();const c=dig($('#cnpj').value);$('#m').textContent='';
+ if(!valido(c)){$('#m').textContent='CNPJ inválido';return}$('#out').innerHTML='<div class="c k">Consultando…</div>';
+ try{const r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+c);if(!r.ok)throw new Error(r.status==404?'CNPJ não encontrado':'Erro '+r.status);mostra(await r.json())}
+ catch(x){$('#out').innerHTML='';$('#m').textContent=x.message}};
+authBox();
+</script></body></html>
